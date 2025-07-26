@@ -1,5 +1,12 @@
 # 📷 Static Photo Gallery Generator
 
+<p align="center">
+  <img src="screenshots/screenshot1.png" height="200">
+  <img src="screenshots/screenshot2.png" height="200">
+  <img src="screenshots/screenshot3.png" height="200">
+  <img src="screenshots/screenshot4.png" height="200">
+</p>
+
 This is a simple static photo gallery viewer that loads and displays images organized in folders using a JSON index. It’s a single-page application built with plain HTML, Tailwind CSS, and vanilla JavaScript, designed to be hosted on any static file host (like S3 or GitHub Pages).
 
 ## ⚠️ **Disclaimer**
