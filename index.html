@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Gallery</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Use Inter as the default font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* A light gray background */
+        }
+        /* Style for the modal */
+        #modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+        #modal-content {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        /* Fade-in animation for gallery items */
+        .gallery-item {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Main Application Container -->
+    <div id="app" class="container mx-auto p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Photo Gallery</h1>
+            <!-- Breadcrumb Navigation -->
+            <nav id="breadcrumbs" class="text-lg mt-2 text-gray-600"></nav>
+        </header>
+
+        <!-- Loading Indicator -->
+        <div id="loader" class="text-center py-10 hidden">
+             <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            <p class="mt-2 text-gray-500">Loading...</p>
+        </div>
+
+        <!-- Error Message Display -->
+        <div id="error-message" class="text-center py-10 bg-red-100 text-red-700 rounded-lg hidden"></div>
+
+        <!-- Gallery Content Area -->
+        <main id="gallery-content" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            <!-- Gallery items will be injected here by JavaScript -->
+        </main>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden" onclick="galleryApp.closeModal()">
+        <div id="modal-content" class="bg-white rounded-lg shadow-2xl p-4 max-w-4xl max-h-full flex flex-col transform scale-95 opacity-0" onclick="event.stopPropagation()">
+            <img id="modal-image" src="" alt="Full size view" class="max-w-full max-h-[80vh] object-contain mx-auto">
+            <p id="modal-caption" class="text-center mt-4 text-gray-700 font-medium"></p>
+            <button onclick="galleryApp.closeModal()" class="absolute top-2 right-2 bg-white rounded-full p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const galleryApp = {
+            // ==================================================================
+            // --- CONFIGURATION ---
+            // ==================================================================
+            config: {
+                baseUrl: '', 
+            },
+
+            // ==================================================================
+            // --- APPLICATION STATE ---
+            // ==================================================================
+            state: {
+                currentPath: '',
+            },
+
+            // ==================================================================
+            // --- DOM ELEMENTS ---
+            // ==================================================================
+            elements: {
+                loader: document.getElementById('loader'),
+                errorMessage: document.getElementById('error-message'),
+                galleryContent: document.getElementById('gallery-content'),
+                breadcrumbs: document.getElementById('breadcrumbs'),
+                modal: {
+                    backdrop: document.getElementById('modal-backdrop'),
+                    content: document.getElementById('modal-content'),
+                    image: document.getElementById('modal-image'),
+                    caption: document.getElementById('modal-caption'),
+                }
+            },
+
+            // ==================================================================
+            // --- CORE LOGIC ---
+            // ==================================================================
+
+            /**
+             * Initializes the application.
+             */
+            init() {
+                window.addEventListener('hashchange', () => this.handleHashChange());
+                this.handleHashChange();
+            },
+
+            /**
+             * Handles changes to the URL hash to navigate the gallery.
+             */
+            handleHashChange() {
+                const path = window.location.hash.substring(1) || '';
+                this.loadGallery(path);
+            },
+            
+            /**
+             * Loads and displays the contents of a directory.
+             * @param {string} path - The path to the directory to load.
+             */
+            async loadGallery(path) {
+                this.state.currentPath = path;
+                this.elements.loader.classList.remove('hidden');
+                this.elements.galleryContent.classList.add('hidden');
+                this.elements.errorMessage.classList.add('hidden');
+                this.elements.galleryContent.innerHTML = '';
+
+                this.updateBreadcrumbs(path);
+
+                const indexPath = `${this.config.baseUrl}${path ? path + '/' : ''}index.json`;
+
+                try {
+                    const response = await fetch(indexPath, { cache: 'no-cache' });
+                    if (!response.ok) {
+                        throw new Error(`Folder not found or network error (status: ${response.status})`);
+                    }
+                    const data = await response.json();
+
+                    data.folders = data.folders || [];
+                    data.photos = data.photos || [];
+
+                    // Alphebetically sort folders and photos
+                    data.folders.sort((a, b) => a.name.localeCompare(b.name));
+                    data.photos.sort((a, b) => a.localeCompare(b));
+
+                    this.renderFolders(data.folders || []);
+                    this.renderPhotos(data.photos || []);
+
+                } catch (error) {
+                    console.error('Failed to load gallery data:', error);
+                    this.elements.errorMessage.textContent = `Error: Could not load gallery. Check if an 'index.json' file exists for this folder. Details: ${error.message}`;
+                    this.elements.errorMessage.classList.remove('hidden');
+                } finally {
+                    this.elements.loader.classList.add('hidden');
+                    this.elements.galleryContent.classList.remove('hidden');
+                }
+            },
+
+            // ==================================================================
+            // --- RENDERING FUNCTIONS ---
+            // ==================================================================
+
+            /**
+             * Renders folder items in the gallery.
+             * @param {Array<Object>} folders - An array of folder objects, now expecting {name: string, photoCount: number}.
+             */
+            renderFolders(folders) {
+                folders.forEach(folder => {
+                    const folderName = folder.name;
+                    const photoCount = folder.photoCount;
+                    const folderPath = `${this.state.currentPath ? this.state.currentPath + '/' : ''}${folderName}`;
+                    
+                    const element = document.createElement('a');
+                    element.href = `#${folderPath}`;
+                    element.className = 'gallery-item group relative aspect-square flex flex-col items-center justify-center bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-lg hover:border-blue-500 transition-all duration-300 cursor-pointer overflow-hidden';
+                    
+                    // --- NEW: Badge for photo count ---
+                    // Only show the badge if there are photos in the folder.
+                    const photoCountBadge = photoCount > 0 ?
+                        `<span class="inline-flex items-center text-xs mt-3 text-gray-800">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
+                            </svg>
+                            ${photoCount} photos
+                        </span>
+                    ` : '';
+
+                    element.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-blue-500 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                        </svg>
+                        <span class="mt-2 text-sm font-medium text-center text-gray-700 px-2 break-all">${folderName}</span>
+                        ${photoCountBadge}
+                    `;
+                    this.elements.galleryContent.appendChild(element);
+                });
+            },
+
+            /**
+             * Renders photo thumbnails in the gallery.
+             * @param {string[]} photos - An array of photo file names.
+             */
+            renderPhotos(photos) {
+                photos.forEach(photoName => {
+                    const photoPath = `${this.config.baseUrl}${this.state.currentPath ? this.state.currentPath + '/' : ''}${photoName}`;
+                    
+                    const element = document.createElement('div');
+                    element.className = 'gallery-item group relative aspect-square bg-gray-200 rounded-lg shadow-sm overflow-hidden cursor-pointer';
+                    element.onclick = () => this.showModal(photoPath, photoName);
+
+                    const img = document.createElement('img');
+                    img.src = photoPath;
+                    img.alt = photoName;
+                    img.loading = 'lazy';
+                    img.className = 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110';
+                    img.onerror = function() {
+                        this.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-100 text-red-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>`;
+                    };
+
+                    element.appendChild(img);
+                    this.elements.galleryContent.appendChild(element);
+                });
+            },
+
+            /**
+             * Updates the breadcrumb navigation bar.
+             * @param {string} path - The current directory path.
+             */
+            updateBreadcrumbs(path) {
+                this.elements.breadcrumbs.innerHTML = '';
+                const parts = path.split('/').filter(Boolean);
+                
+                const homeLink = document.createElement('a');
+                homeLink.href = '#';
+                homeLink.className = 'hover:text-blue-600 hover:underline';
+                homeLink.textContent = 'Home';
+                this.elements.breadcrumbs.appendChild(homeLink);
+
+                let cumulativePath = '';
+                parts.forEach(part => {
+                    cumulativePath += (cumulativePath ? '/' : '') + part;
+                    
+                    const separator = document.createElement('span');
+                    separator.className = 'mx-2';
+                    separator.textContent = '/';
+                    this.elements.breadcrumbs.appendChild(separator);
+
+                    const partLink = document.createElement('a');
+                    partLink.href = `#${cumulativePath}`;
+                    partLink.className = 'hover:text-blue-600 hover:underline';
+                    
+                    try {
+                        partLink.textContent = decodeURIComponent(part);
+                    } catch (e) {
+                        console.error("Could not decode breadcrumb part:", part, e);
+                        partLink.textContent = part;
+                    }
+                    this.elements.breadcrumbs.appendChild(partLink);
+                });
+            },
+
+            // ==================================================================
+            // --- MODAL CONTROLS ---
+            // ==================================================================
+
+            /**
+             * Displays the image modal.
+             * @param {string} imageUrl - The URL of the image to display.
+             * @param {string} caption - The caption for the image.
+             */
+            showModal(imageUrl, caption) {
+                this.elements.modal.image.src = imageUrl;
+                this.elements.modal.caption.textContent = caption;
+                
+                this.elements.modal.backdrop.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    this.elements.modal.backdrop.classList.add('opacity-100');
+                    this.elements.modal.content.classList.remove('scale-95', 'opacity-0');
+                    this.elements.modal.content.classList.add('scale-100', 'opacity-100');
+                });
+
+                window.addEventListener('keydown', this.handleKeydown);
+            },
+
+            /**
+             * Closes the image modal.
+             */
+            closeModal() {
+                this.elements.modal.backdrop.classList.remove('opacity-100');
+                this.elements.modal.content.classList.remove('scale-100', 'opacity-100');
+                this.elements.modal.content.classList.add('scale-95', 'opacity-0');
+
+                setTimeout(() => {
+                    this.elements.modal.backdrop.classList.add('hidden');
+                    this.elements.modal.image.src = '';
+                }, 300);
+
+                window.removeEventListener('keydown', this.handleKeydown);
+            },
+
+            /**
+             * Handles keyboard events for the modal.
+             * @param {KeyboardEvent} e - The keyboard event.
+             */
+            handleKeydown(e) {
+                if (e.key === 'Escape') {
+                    galleryApp.closeModal();
+                }
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => galleryApp.init());
+    </script>
+
+</body>
+</html>
