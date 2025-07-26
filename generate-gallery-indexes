@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# ==============================================================================
+# Photo Gallery Indexer
+#
+# Description:
+# This script recursively finds all directories within a specified root
+# directory. In each of these directories, it creates an `index.json` file
+# that catalogs subdirectories and image files.
+#
+# This updated version now includes a `photoCount` for each subdirectory,
+# allowing the UI to display how many photos are in each folder.
+#
+# Requirements:
+# - `jq`: This script uses `jq` to create JSON files safely.
+#   - macOS (Homebrew): `brew install jq`
+#   - Debian/Ubuntu: `sudo apt-get install jq`
+#
+# Usage:
+# 1. Save this script as `generate-gallery-indexes`.
+# 2. Make it executable: `chmod +x generate-gallery-indexes`
+# 3. Run it, passing your root photo directory as an argument:
+#    `./generate-gallery-indexes /path/to/your/photos`
+#
+# ==============================================================================
+
+# --- Configuration ---
+# A list of image file extensions to look for (case-insensitive).
+IMAGE_EXTENSIONS=("jpg" "jpeg" "png" "gif" "webp" "bmp" "heic")
+
+# --- Script Logic ---
+
+# Check if the root directory is provided.
+if [ -z "$1" ]; then
+  echo "Error: No root directory specified."
+  echo "Usage: $0 /path/to/your/photos"
+  exit 1
+fi
+
+# Check if the specified directory exists.
+if [ ! -d "$1" ]; then
+  echo "Error: Directory '$1' not found."
+  exit 1
+fi
+
+# Check if jq is installed.
+if ! command -v jq &> /dev/null; then
+    echo "Error: 'jq' is not installed. Please install it to continue."
+    exit 1
+fi
+
+ROOT_DIR=$(realpath "$1")
+echo "Starting indexing process for directory: $ROOT_DIR"
+
+# --- Pre-build find arguments for image extensions for efficiency ---
+find_photo_args=()
+if [ ${#IMAGE_EXTENSIONS[@]} -gt 0 ]; then
+    for ext in "${IMAGE_EXTENSIONS[@]}"; do
+        find_photo_args+=(-o -iname "*.$ext")
+    done
+    # The first element will be a redundant '-o', so we slice the array.
+    find_photo_args=("${find_photo_args[@]:1}")
+fi
+
+# --- Process each directory ---
+# Find all directories within the root and process each one.
+find "$ROOT_DIR" -type d | while read -r DIR; do
+  echo "Processing: $DIR"
+
+  # --- Find Folders and Their Respective Photo Counts ---
+  # This block finds immediate subdirectories and counts the photos within each.
+  # The output is a valid JSON array of objects, e.g., [{ "name": "folder1", "photoCount": 15 }, ...]
+  FOLDERS_JSON=$(
+    # Find immediate subdirectories and print them null-terminated for safety.
+    find "$DIR" -mindepth 1 -maxdepth 1 -type d -print0 |
+    # Read each subdirectory path.
+    while IFS= read -r -d '' SUBDIR; do
+      PHOTO_COUNT=0
+      if [ ${#find_photo_args[@]} -gt 0 ]; then
+        # Count files matching extensions in the subdirectory.
+        # The result is piped to wc -l, which counts the lines (i.e., files found).
+        PHOTO_COUNT=$(find "$SUBDIR" -mindepth 1 -maxdepth 1 -type f \( "${find_photo_args[@]}" \) | wc -l)
+      fi
+      # Use jq to create a JSON object for this single directory and its photo count.
+      jq -n --arg name "$(basename "$SUBDIR")" --argjson count "$PHOTO_COUNT" \
+        '{name: $name, photoCount: $count}'
+    done | jq -s . # Use jq's slurp mode (-s) to gather all JSON objects into one array.
+  )
+  
+  # --- Find Photos in the *current* directory ---
+  # This generates a simple JSON array of photo filenames.
+  PHOTOS_JSON=$(
+    if [ ${#find_photo_args[@]} -gt 0 ]; then
+        find "$DIR" -mindepth 1 -maxdepth 1 -type f \( "${find_photo_args[@]}" \) -exec basename {} \; | jq -R . | jq -s .
+    else
+        echo "[]"
+    fi
+  )
+  
+  # --- Create final index.json ---
+  # Combine the folders and photos JSON into a single object.
+  # Using :-[] provides a default empty array if the variables are empty.
+  JSON_CONTENT=$(jq -n \
+    --argjson folders "${FOLDERS_JSON:-[]}" \
+    --argjson photos "${PHOTOS_JSON:-[]}" \
+    '{folders: $folders, photos: $photos}')
+
+  # Write the final JSON to the index file.
+  echo "$JSON_CONTENT" > "$DIR/index.json"
+
+done
+
+echo "Indexing complete."
+echo "All directories should now contain an 'index.json' file with photo counts."
